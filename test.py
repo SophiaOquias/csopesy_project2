@@ -1,93 +1,104 @@
-import threading
-import time
+from threading import Thread, Lock, BoundedSemaphore, Semaphore, current_thread
+from time import sleep
 
-class FittingRoom:
-    def __init__(self, n):
-        self.n = n
-        self.blue_slots = threading.Semaphore(n)
-        self.green_slots = threading.Semaphore(n)
-        self.room_lock = threading.Lock()
-        self.blue_counter = 0
-        self.green_counter = 0
-        self.is_room_empty = True
+def blue_process():
+    global blue_lock, green_lock, fitting_slots, blue_limit, green_limit
+    global total_slots, blue_count, green_count
+    
+    blue_limit.acquire()
 
-    def enter_room(self, thread_id, color):
-        with self.room_lock:
-            if self.is_room_empty:
-                if color == 'blue':
-                    print("Blue only.")
-                elif color == 'green':
-                    print("Green only.")
-                self.is_room_empty = False
+    while green_lock.locked():
+        pass
 
-            if color == 'blue':
-                while self.green_counter > 0:
-                    self.room_lock.release()
-                    time.sleep(0.1)  # Add a small delay to reduce busy waiting
-                    self.room_lock.acquire()
-                self.blue_counter += 1
-            else:
-                while self.blue_counter > 0:
-                    self.room_lock.release()
-                    time.sleep(0.1)  # Add a small delay to reduce busy waiting
-                    self.room_lock.acquire()
-                self.green_counter += 1
+    if not blue_lock.locked() and not green_lock.locked():
+        blue_lock.acquire()
+        print("Blue only.")
 
-        if color == 'blue':
-            self.blue_slots.acquire()
-        else:
-            self.green_slots.acquire()
+    fitting_slots.acquire()
+    print(current_thread().name)
 
-        timestamp_ms = int(time.time() * 1000)
-        print(f"{timestamp_ms} - {thread_id} ({color}) entered the fitting room.")
+    sleep(1)
 
-    def exit_room(self, thread_id, color):
-        with self.room_lock:
-            timestamp_ms = int(time.time() * 1000)
-            print(f"{timestamp_ms} - {thread_id} ({color}) exited the fitting room.")
-            if color == 'blue':
-                self.blue_counter -= 1
-                if self.blue_counter == 0:
-                    self.is_room_empty = True
-                self.blue_slots.release()
-            else:
-                self.green_counter -= 1
-                if self.green_counter == 0:
-                    self.is_room_empty = True
-                self.green_slots.release()
+    global completed_blue_processes
+    completed_blue_processes += 1
 
-def simulate_fitting_room(n, b, g):
-    fitting_room = FittingRoom(n)
+    fitting_slots.release()
 
-    def blue_thread(thread_id):
-        fitting_room.enter_room(thread_id, 'blue')
-        time.sleep(1)  # Simulate some work inside the fitting room
-        fitting_room.exit_room(thread_id, 'blue')
+    global completed_green_processes
 
-    def green_thread(thread_id):
-        fitting_room.enter_room(thread_id, 'green')
-        time.sleep(1)  # Simulate some work inside the fitting room
-        fitting_room.exit_room(thread_id, 'green')
+    if completed_blue_processes == blue_count or (completed_blue_processes % total_slots == 0 and completed_green_processes != green_count):
+        print("Empty fitting room.")
+        
+        if completed_green_processes != green_count:
+            for _ in range(total_slots):
+                green_limit.release()
+            
+            # Ensure the lock is acquired before releasing
+            if blue_lock.locked():
+                blue_lock.release()
 
-    threads = []
+    elif completed_green_processes == green_count:
+        # Ensure the lock is acquired before releasing
+        if blue_lock.locked():
+            blue_lock.release()
 
-    for i in range(b):
-        thread = threading.Thread(target=blue_thread, args=(f"Blue-{i}",))
-        threads.append(thread)
+def green_process():
+    global blue_lock, green_lock, fitting_slots, green_limit, blue_limit
+    global total_slots, blue_count, green_count
+    
+    green_limit.acquire()
 
-    for i in range(g):
-        thread = threading.Thread(target=green_thread, args=(f"Green-{i}",))
-        threads.append(thread)
+    while blue_lock.locked():
+        pass
+    
+    if not green_lock.locked() and not blue_lock.locked():
+        green_lock.acquire()
+        print("Green only.")
+    
+    fitting_slots.acquire()
+    print(current_thread().name)
 
-    for thread in threads:
-        thread.start()
+    sleep(1)
 
-    for thread in threads:
-        thread.join()
+    global completed_green_processes
+    completed_green_processes += 1
+
+    fitting_slots.release()
+
+    global completed_blue_processes
+
+    if completed_green_processes == green_count or (completed_green_processes % total_slots == 0 and completed_blue_processes != blue_count):
+        print("Empty fitting room.")
+        
+        if completed_blue_processes != blue_count:
+            for _ in range(total_slots):
+                blue_limit.release()
+            
+            green_lock.release()
+
+    elif completed_blue_processes == blue_count:
+        green_limit.release()
+
+def main():
+    global blue_lock, green_lock, fitting_slots, blue_limit, green_limit
+    global total_slots, blue_count, green_count, completed_blue_processes, completed_green_processes
+
+    total_slots, blue_count, green_count = map(int, input("Input values: ").split())
+    fitting_slots = BoundedSemaphore(total_slots)
+    blue_lock, green_lock = Lock(), Lock()
+    completed_blue_processes, completed_green_processes = 0, 0
+    limit_value = total_slots + 5
+
+    if blue_count <= 0:
+        green_limit, blue_limit = Semaphore(limit_value), Semaphore(0)
+    else:
+        blue_limit, green_limit = Semaphore(limit_value), Semaphore(0)
+
+    for i in range(1, blue_count+1):
+        Thread(target=blue_process, name=f"{i} Blue").start()
+
+    for i in range(1, green_count+1):
+        Thread(target=green_process, name=f"{i} Green").start()
 
 if __name__ == "__main__":
-    n = int(input("Enter the number of slots inside the fitting room: "))
-    b = int(input("Enter the number of blue threads: "))
-    g = int(input("Enter the number of green threads: "))
-
-    simulate_fitting_room(n, b, g)
+    main()
