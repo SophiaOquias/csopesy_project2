@@ -6,11 +6,11 @@ room = BoundedSemaphore(value=n)
 blue_done, green_done = 0, 0
 id = 1
 switch = n
-mtx = Lock()
+mutex = Lock()
 
 def fit_room(color):
     global id, blue_done, green_done
-    print(f"ID: {id} Color: {color}")
+    print(f"{id} {color}")
     if color == 'Green':
         green_done += 1
     else:
@@ -24,28 +24,35 @@ def fit_room(color):
         print("\nEmpty fitting room")
 
 def color_func(color):
-    global id, mtx, room, blue_done, green_done, switch
+    global id, mutex, room, blue_done, green_done, switch
     ctr = 0
 
     while (green_done != g and color == 'Green') or (blue_done != b and color == 'Blue'):
-        mtx.acquire()
+        mutex.acquire()
         print(f"\n{color} Only")
 
-        temp = 1
-        while temp == 1:
+        temp = True
+        while temp == True:
             room.acquire()
             Thread(target=lambda: fit_room(color)).start()
-            sleep(1)
+            sleep(0.1)
 
             if (green_done != g and color == 'Green') or (blue_done != b and color == 'Blue'):
                 if ctr == switch - 1:
+
                     other_color_done = green_done if color == 'Blue' else blue_done
-                    if other_color_done != (g if color == 'Green' else b):
+                    total = g if color == 'Green' else b 
+
+                    if other_color_done != total:
+
+                        # while room is still occupied do nothing 
                         while room._value != n:
                             pass
-                        mtx.release()
+
+                        mutex.release()
                         sleep(1)
-                        temp = 0
+
+                        temp = False
                         ctr = 0
                 else:
                     ctr += 1
@@ -53,18 +60,19 @@ def color_func(color):
                 ctr = 0
                 while room._value != n:
                     pass
-                mtx.release()
+                mutex.release()
                 sleep(1)
-                temp = 0
+                temp = False
 
 def main():
     global n, b, g
-    green_thread = Thread(target=lambda: color_func('Green'))
+    
     blue_thread = Thread(target=lambda: color_func('Blue'))
+    green_thread = Thread(target=lambda: color_func('Green'))
 
-    green_thread.start()
-    sleep(1)
     blue_thread.start()
+    sleep(1)
+    green_thread.start()
 
 if __name__ == "__main__":
     main()
