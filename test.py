@@ -13,9 +13,9 @@ def blue_process():
     if not blue_lock.locked() and not green_lock.locked():
         blue_lock.acquire()
         print("Blue only.")
-
+        
     fitting_slots.acquire()
-    print(current_thread().name)
+    print(f"{current_thread().name}")
 
     sleep(1)
 
@@ -33,12 +33,10 @@ def blue_process():
             for _ in range(total_slots):
                 green_limit.release()
             
-            # Ensure the lock is acquired before releasing
             if blue_lock.locked():
                 blue_lock.release()
 
     elif completed_green_processes == green_count:
-        # Ensure the lock is acquired before releasing
         if blue_lock.locked():
             blue_lock.release()
 
@@ -56,7 +54,7 @@ def green_process():
         print("Green only.")
     
     fitting_slots.acquire()
-    print(current_thread().name)
+    print(f"{current_thread().name}")
 
     sleep(1)
 
@@ -74,10 +72,12 @@ def green_process():
             for _ in range(total_slots):
                 blue_limit.release()
             
-            green_lock.release()
+            if green_lock.locked():
+                green_lock.release()
 
     elif completed_blue_processes == blue_count:
-        green_limit.release()
+        if green_lock.locked():
+            green_lock.release()
 
 def main():
     global blue_lock, green_lock, fitting_slots, blue_limit, green_limit
